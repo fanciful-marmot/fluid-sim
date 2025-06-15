@@ -11,15 +11,15 @@ const fullscreenTriangle = {
         0.0, // BL
         -1.0,
         3.0,
-        0.0, // TR
+        0.0, // TL
     ]),
     uvs: new Float32Array([
-        3.0,
+        2.0,
         1.0, // BR
         0.0,
         1.0, // BL
         0.0,
-        -3.0, // TR
+        -1.0, // TL
     ]),
     colors: new Float32Array([
         3.0,
