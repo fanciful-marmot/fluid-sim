@@ -5,6 +5,7 @@ const getDevice = async () => {
 
     return await adapter.requestDevice({
         label: 'WebGPU Sim Device',
+        requiredFeatures: ['float32-filterable'] as any,
     });
 };
 

@@ -1,3 +1,5 @@
+import { FluidSim } from './fluidsim';
+import { BlitPass } from './utils/blitPass';
 import { createFullScreenTriangle } from './utils/fullscreenTriangle';
 import { getDevice } from './utils/webgpu';
 
@@ -9,7 +11,8 @@ class Renderer {
     #loopId: number;
 
     #renderPipeline: GPURenderPipeline | null = null;
-    #fullscreenTriangle: ReturnType<typeof createFullScreenTriangle>;
+    #blitPass: BlitPass;
+    #fluidSim: FluidSim;
 
     constructor(canvas: HTMLCanvasElement) {
         this.#context = canvas.getContext('webgpu');
@@ -37,33 +40,31 @@ class Renderer {
             alphaMode: 'opaque',
         });
 
-        this.#fullscreenTriangle = createFullScreenTriangle(
+        const { width, height } = this.#size;
+
+        this.#blitPass = new BlitPass(
             this.#device,
+            this.#context,
+            width,
+            height,
             navigator.gpu.getPreferredCanvasFormat()
         );
 
-        // Pipeline
-        const layout = this.#device.createPipelineLayout({
-            bindGroupLayouts: [],
-        });
+        this.#fluidSim = new FluidSim(this.#device, 100, 100);
 
-        this.#renderPipeline = await this.#device.createRenderPipelineAsync({
-            layout,
-            vertex: this.#fullscreenTriangle.vertex,
-            fragment: this.#fullscreenTriangle.fragment,
-            primitive: this.#fullscreenTriangle.primitive,
-        });
+        await Promise.all([this.#blitPass.init(), this.#fluidSim.init()]);
     }
 
     destroy() {
         this.#device?.destroy();
-        this.#fullscreenTriangle?.destroy();
+        this.#blitPass?.destroy();
+        this.#fluidSim?.destroy();
     }
 
     start() {
         // Setup render loop
         const loop = (delta: number) => {
-            this.#loopId = requestAnimationFrame(loop);
+            // this.#loopId = requestAnimationFrame(loop);
 
             this.#render(delta);
         };
@@ -75,41 +76,10 @@ class Renderer {
     }
 
     #render(_delta: number) {
-        // Get next output texture
-        const colorTexture = this.#context.getCurrentTexture();
-        const colorTextureView = colorTexture.createView();
-
-        this.#encodeCommands(colorTextureView);
-    }
-
-    #encodeCommands(colorView: GPUTextureView) {
-        const colorAttachement: GPURenderPassColorAttachment = {
-            view: colorView,
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-            loadOp: 'clear',
-            storeOp: 'store',
-        };
-
-        const renderPassDesc: GPURenderPassDescriptor = {
-            colorAttachments: [colorAttachement],
-        };
-
         const encoder = this.#device.createCommandEncoder();
 
-        const passEncoder = encoder.beginRenderPass(renderPassDesc);
-        passEncoder.setPipeline(this.#renderPipeline);
-        passEncoder.setViewport(
-            0,
-            0,
-            this.#size.width,
-            this.#size.height,
-            0,
-            1
-        );
-        passEncoder.setScissorRect(0, 0, this.#size.width, this.#size.height);
-        this.#fullscreenTriangle.draw(passEncoder);
-        passEncoder.end();
-
+        this.#fluidSim.encodePass(encoder);
+        this.#blitPass.encodePass(encoder, this.#fluidSim.getOutputBindGroup());
         this.#device.queue.submit([encoder.finish()]);
     }
 }

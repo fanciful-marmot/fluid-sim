@@ -37,7 +37,11 @@ const fullscreenTriangle = {
 
 const createFullScreenTriangle = (
     device: GPUDevice,
-    format: GPUTextureFormat
+    format: GPUTextureFormat,
+    shader?: {
+        module: GPUShaderModule;
+        entryPoint: string;
+    }
 ) => {
     const buffers = {
         uv: createBuffer(device, fullscreenTriangle.uvs, GPUBufferUsage.VERTEX),
@@ -87,8 +91,8 @@ const createFullScreenTriangle = (
     };
 
     const fragment: GPUFragmentState = {
-        module,
-        entryPoint: 'fs_main',
+        module: shader?.module ?? module,
+        entryPoint: shader?.entryPoint ?? 'fs_main',
         targets: [
             {
                 format,
