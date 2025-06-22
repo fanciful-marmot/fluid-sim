@@ -8,5 +8,6 @@ struct VertexOutput {
 
 @fragment
 fn blit_main(in: VertexOutput) -> @location(0) vec4f {
-    return vec4(textureSample(fieldTexture, fieldSampler, in.uv).rgb, 1.0);
+    var rgb = vec3f(textureSample(fieldTexture, fieldSampler, in.uv).r, 0.0, 0.0);
+    return vec4(rgb, 1.0);
 }

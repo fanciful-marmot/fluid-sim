@@ -27,3 +27,7 @@ observer.observe(canvas, { box: 'device-pixel-content-box' });
 await renderer.init();
 
 renderer.start();
+
+window.addEventListener('keydown', () => {
+    renderer.requestRender();
+});

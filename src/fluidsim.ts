@@ -6,7 +6,11 @@ class FluidSim {
     #device: GPUDevice;
     #size: [number, number];
 
-    #fullscreenTriangle: ReturnType<typeof createFullScreenTriangle>;
+    #diffusePass: ReturnType<typeof createFullScreenTriangle>;
+    #diffusePipeline: GPURenderPipeline;
+
+    #advectPass: ReturnType<typeof createFullScreenTriangle>;
+    #advectPipeline: GPURenderPipeline;
 
     // Need ping-pong buffers to track velocity and density
     #bindGroups: Array<{
@@ -14,22 +18,22 @@ class FluidSim {
         view: GPUTextureView;
         texture: GPUTexture; // R=density, G=hor_v, B=ver_v
     }>;
-    #pipeline: GPURenderPipeline;
     #pingpong: 0 | 1 = 0;
 
     constructor(device: GPUDevice, width: number, height: number) {
         this.#device = device;
         this.#size = [width, height];
-        this.#fullscreenTriangle = createFullScreenTriangle(
-            device,
-            'rgba32float',
-            {
-                module: this.#device.createShaderModule({
-                    code: fluidSimShaderCode,
-                }),
-                entryPoint: 'fluid_main',
-            }
-        );
+        const module = this.#device.createShaderModule({
+            code: fluidSimShaderCode,
+        });
+        this.#diffusePass = createFullScreenTriangle(device, 'rgba32float', {
+            module,
+            entryPoint: 'fluid_diffuse',
+        });
+        this.#advectPass = createFullScreenTriangle(device, 'rgba32float', {
+            module,
+            entryPoint: 'fluid_advect',
+        });
     }
 
     async init() {
@@ -39,7 +43,7 @@ class FluidSim {
         const fieldData = new Float32Array(w * h * 4);
         for (let i = 0; i < w * h * 4; i += 4) {
             fieldData[i + 0] = Math.random();
-            fieldData[i + 1] = 0;
+            fieldData[i + 1] = Math.sin(i / h / 16.0);
             fieldData[i + 2] = 0;
             fieldData[i + 3] = 0;
         }
@@ -72,7 +76,10 @@ class FluidSim {
                 GPUTextureUsage.TEXTURE_BINDING,
             format: 'rgba32float',
         };
-        const sampler = this.#device.createSampler();
+        const sampler = this.#device.createSampler({
+            addressModeU: 'repeat',
+            addressModeV: 'repeat',
+        });
         this.#bindGroups = new Array(2).fill(0).map((_, i) => {
             const texture = this.#device.createTexture(fieldDescriptor);
             const view = texture.createView();
@@ -109,16 +116,25 @@ class FluidSim {
             bindGroupLayouts: [bindGroupLayout],
         });
 
-        this.#pipeline = await this.#device.createRenderPipelineAsync({
+        this.#diffusePipeline = await this.#device.createRenderPipelineAsync({
+            label: 'Fluid Sim Diffusion',
             layout,
-            vertex: this.#fullscreenTriangle.vertex,
-            fragment: this.#fullscreenTriangle.fragment,
-            primitive: this.#fullscreenTriangle.primitive,
+            vertex: this.#diffusePass.vertex,
+            fragment: this.#diffusePass.fragment,
+            primitive: this.#diffusePass.primitive,
+        });
+        this.#advectPipeline = await this.#device.createRenderPipelineAsync({
+            label: 'Fluid Sim Advect',
+            layout,
+            vertex: this.#advectPass.vertex,
+            fragment: this.#advectPass.fragment,
+            primitive: this.#advectPass.primitive,
         });
     }
 
     destroy() {
-        this.#fullscreenTriangle.destroy();
+        this.#diffusePass.destroy();
+        this.#advectPass.destroy();
     }
 
     getOutputBindGroup(): GPUBindGroup {
@@ -126,9 +142,31 @@ class FluidSim {
     }
 
     encodePass(encoder: GPUCommandEncoder) {
-        // Encode update pass
+        // Encode the diffusion step
+        for (let k = 0; k < 20; k++) {
+            const pass = encoder.beginRenderPass({
+                label: `FluidSim Diffusion Step ${k}`,
+                colorAttachments: [
+                    {
+                        view: this.#bindGroups[(this.#pingpong + 1) % 2].view,
+                        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+                        loadOp: 'clear',
+                        storeOp: 'store',
+                    },
+                ],
+            });
+            pass.setPipeline(this.#diffusePipeline);
+            pass.setViewport(0, 0, this.#size[0], this.#size[1], 0, 1);
+            pass.setScissorRect(0, 0, this.#size[0], this.#size[1]);
+            pass.setBindGroup(0, this.#bindGroups[this.#pingpong].bindGroup);
+            this.#diffusePass.draw(pass);
+            pass.end();
+            this.#pingpong = this.#pingpong === 0 ? 1 : 0;
+        }
+
+        // Encode advection
         const pass = encoder.beginRenderPass({
-            label: 'FluidSim',
+            label: 'FluidSim Advect',
             colorAttachments: [
                 {
                     view: this.#bindGroups[(this.#pingpong + 1) % 2].view,
@@ -138,13 +176,12 @@ class FluidSim {
                 },
             ],
         });
-        pass.setPipeline(this.#pipeline);
+        pass.setPipeline(this.#advectPipeline);
         pass.setViewport(0, 0, this.#size[0], this.#size[1], 0, 1);
         pass.setScissorRect(0, 0, this.#size[0], this.#size[1]);
         pass.setBindGroup(0, this.#bindGroups[this.#pingpong].bindGroup);
-        this.#fullscreenTriangle.draw(pass);
+        this.#advectPass.draw(pass);
         pass.end();
-
         this.#pingpong = this.#pingpong === 0 ? 1 : 0;
     }
 }

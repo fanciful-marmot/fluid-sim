@@ -1,6 +1,5 @@
 import { FluidSim } from './fluidsim';
 import { BlitPass } from './utils/blitPass';
-import { createFullScreenTriangle } from './utils/fullscreenTriangle';
 import { getDevice } from './utils/webgpu';
 
 class Renderer {
@@ -9,8 +8,8 @@ class Renderer {
     #device: GPUDevice | null = null;
     #context: GPUCanvasContext;
     #loopId: number;
+    #needsRender: boolean = true;
 
-    #renderPipeline: GPURenderPipeline | null = null;
     #blitPass: BlitPass;
     #fluidSim: FluidSim;
 
@@ -64,11 +63,18 @@ class Renderer {
     start() {
         // Setup render loop
         const loop = (delta: number) => {
-            // this.#loopId = requestAnimationFrame(loop);
+            this.#loopId = requestAnimationFrame(loop);
 
-            this.#render(delta);
+            if (this.#needsRender) {
+                this.#needsRender = false;
+                this.#render(delta);
+            }
         };
         loop(0);
+    }
+
+    requestRender() {
+        this.#needsRender = true;
     }
 
     stop() {
