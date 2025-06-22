@@ -47,40 +47,29 @@ fn fluid_advect(in: VertexOutput) -> @location(0) vec4f {
     var data = getTUV(in.uv);
 
     // Advect
-    var dt = 1.0 / dimensions.x;
+    var dt = 1.0 / 144.0;
     var dt0 = dt * dimensions.x;
     var ij: vec2f = floor(in.uv / pixelStep);
 
     var x = ij.x - dt0 * data.g;
-
-    // TODO: Since the field repeats this doesn't seem needed?
-    // x = max(0.5, min(dimensions.x - 0.5, x));
-
-    var i0 = floor(x);
-    var i1 = i0 + 1.0;
-
     var y = ij.y - dt0 * data.b;
 
-    // TODO: Since the field repeats this doesn't seem needed?
-    // y = max(0.5, min(dimensions.y - 0.5, y));
+    var xy = ij - dt0 * data.gb;
 
-    var j0 = floor(y);
-    var j1 = j0 + 1.0;
+    var ij0 = floor(xy);
+    var ij1 = ij0 + 1.0;
 
-    var s1 = x - i0;
-    var s0 = 1.0 - s1;
+    var st1 = xy - ij0;
+    var st0 = 1.0 - st1;
 
-    var t1 = y - j0;
-    var t0 = 1.0 - t1;
-
-    var p00 = getTXY(vec2f(i0,j0), dimensions).r;
-    var p01 = getTXY(vec2f(i0,j1), dimensions).r;
-    var p10 = getTXY(vec2f(i1,j0), dimensions).r;
-    var p11 = getTXY(vec2f(i1,j1), dimensions).r;
+    var p00 = getTXY(ij0, dimensions).r;
+    var p01 = getTXY(vec2f(ij0.x, ij1.y), dimensions).r;
+    var p10 = getTXY(vec2f(ij1.x, ij0.y), dimensions).r;
+    var p11 = getTXY(ij1, dimensions).r;
 
     var density = 
-        s0 * (t0 * p00 + t1 * p01) +
-        s1 * (t0 * p10 + t1 * p11);
+        st0.x * (st0.y * p00 + st1.y * p01) +
+        st1.x * (st0.y * p10 + st1.y * p11);
 
     var color_out = vec4f(density, data.gba);
 
